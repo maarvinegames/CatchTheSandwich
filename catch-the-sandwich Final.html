@@ -1,0 +1,858 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Catch the Sandwich</title>
+<style>
+  :root{
+    --gold: #FFC93C;
+    --gold-dark: #E8A317;
+    --red: #FF4757;
+    --green: #2ED573;
+    --cream: #FFF6E5;
+    --tray: #C9CFD6;
+    --tray-dark: #8A929C;
+  }
+  *{ box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; }
+  html, body{
+    margin:0; padding:0; width:100%; height:100%;
+    background:#000; overflow:hidden; overscroll-behavior:none;
+    font-family: 'Arial Rounded MT Bold', 'Segoe UI', system-ui, sans-serif;
+    touch-action:none;
+  }
+  #app{ position:fixed; inset:0; background:#000; touch-action:none; }
+  canvas{ position:absolute; inset:0; width:100%; height:100%; display:block; touch-action:none; }
+
+  /* ---------- Shared screen styling ---------- */
+  .screen{
+    position:absolute; inset:0; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; text-align:center;
+    color:var(--cream); z-index:10;
+    background: radial-gradient(circle at 50% 30%, #1a1a1a 0%, #000 70%);
+  }
+  .hidden{ display:none !important; }
+
+  .title{
+    font-size: 12vw; line-height:1; font-weight:900;
+    color: var(--gold);
+    text-shadow: 0 6px 0 var(--gold-dark), 0 10px 18px rgba(0,0,0,0.6);
+    letter-spacing: -1px;
+    margin: 0 0 0.2em 0;
+    animation: titleBob 2.2s ease-in-out infinite;
+  }
+  .title .accent{ color: var(--red); text-shadow: 0 6px 0 #b02a37, 0 10px 18px rgba(0,0,0,0.6); }
+  @keyframes titleBob{
+    0%,100%{ transform: translateY(0) rotate(-1deg); }
+    50%{ transform: translateY(-8px) rotate(1deg); }
+  }
+
+  .sandwich-emoji{ font-size: 18vw; margin-bottom: 0.1em; filter: drop-shadow(0 10px 14px rgba(0,0,0,0.6)); animation: spin3d 3.2s ease-in-out infinite; }
+  @keyframes spin3d{
+    0%,100%{ transform: rotate(-8deg) scale(1); }
+    50%{ transform: rotate(8deg) scale(1.05); }
+  }
+
+  .btn{
+    font-family:inherit; font-weight:900; font-size: 7vw;
+    padding: 0.5em 1.4em; border-radius: 100px; border:none;
+    background: linear-gradient(180deg, var(--green), #22b364);
+    color:#fff; box-shadow: 0 8px 0 #1b8f50, 0 14px 24px rgba(0,0,0,0.5);
+    cursor:pointer; margin-top: 0.4em;
+    transition: transform 0.08s ease;
+  }
+  .btn:active{ transform: translateY(6px); box-shadow: 0 2px 0 #1b8f50, 0 6px 12px rgba(0,0,0,0.5); }
+  .btn.secondary{
+    background: linear-gradient(180deg, #4c5560, #333a42);
+    box-shadow: 0 8px 0 #1b1f24, 0 14px 24px rgba(0,0,0,0.5);
+    font-size: 5.5vw;
+  }
+  .btn.secondary:active{ box-shadow: 0 2px 0 #1b1f24, 0 6px 12px rgba(0,0,0,0.5); }
+
+  .best-label{ font-size: 5vw; color:#ffe8a3; margin-top: 0.8em; opacity:0.9; font-weight:700; }
+  .best-label b{ color: var(--gold); }
+
+  .go-score{ font-size: 15vw; font-weight:900; color:#fff; margin: 0.1em 0; }
+  .go-sub{ font-size: 5vw; color:#ffe8a3; margin-bottom: 0.6em; font-weight:700; }
+  .go-label{ font-size:6vw; color:#aeb4bb; font-weight:800; letter-spacing:2px; text-transform:uppercase; margin-top:0.4em;}
+
+  .btn-row{ display:flex; gap: 4vw; margin-top: 1em; }
+
+  /* ---------- HUD ---------- */
+  #hud{
+    position:absolute; inset:0; z-index:5; pointer-events:none;
+    padding: max(14px, env(safe-area-inset-top)) 16px 0 16px;
+    display:flex; justify-content:space-between; align-items:flex-start;
+  }
+  .hud-block{ display:flex; flex-direction:column; align-items:center; min-width:60px; }
+  #hearts{ font-size: 7vw; letter-spacing: 2px; filter: drop-shadow(0 3px 3px rgba(0,0,0,0.6)); }
+  #score{ font-size: 10vw; font-weight:900; color:#fff; text-shadow: 0 3px 0 rgba(0,0,0,0.5); }
+  #bestScoreHud{ font-size: 4vw; font-weight:800; color: var(--gold); background: rgba(0,0,0,0.4); padding: 2px 10px; border-radius: 20px; }
+  #bestScoreHudLabel{ font-size: 2.6vw; color:#aaa; font-weight:700; letter-spacing:1px; }
+
+  #flash{
+    position:absolute; inset:0; background:#fff; opacity:0; pointer-events:none; z-index:8;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <canvas id="game"></canvas>
+
+  <!-- HUD -->
+  <div id="hud" class="hidden">
+    <div class="hud-block" style="align-items:flex-start;"><div id="hearts">❤️❤️❤️</div></div>
+    <div class="hud-block"><div id="score">0</div></div>
+    <div class="hud-block" style="align-items:flex-end;">
+      <div id="bestScoreHudLabel">BEST</div>
+      <div id="bestScoreHud">0</div>
+    </div>
+  </div>
+
+  <div id="flash"></div>
+
+  <!-- Start Screen -->
+  <div id="startScreen" class="screen">
+    <div class="sandwich-emoji">🥪</div>
+    <h1 class="title">Catch the<br><span class="accent">Sandwich</span></h1>
+    <button class="btn" id="playBtn">PLAY</button>
+    <div class="best-label">Best Score: <b id="bestScoreStart">0</b></div>
+  </div>
+
+  <!-- Game Over Screen -->
+  <div id="gameOverScreen" class="screen hidden">
+    <div class="go-label">Game Over</div>
+    <div class="go-score" id="finalScore">0</div>
+    <div class="go-sub">Best: <b id="bestScoreEnd">0</b></div>
+    <div class="btn-row">
+      <button class="btn" id="playAgainBtn">Play Again</button>
+      <button class="btn secondary" id="homeBtn">Home</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+"use strict";
+
+/* =========================================================================
+   CATCH THE SANDWICH — v1
+   Architecture:
+     AudioManager      - all sound synthesis (Web Audio API, no assets needed)
+     AnimationManager   - particles, floating text, screen shake, tweened FX
+     HUD                - DOM-based heads-up display
+     ObjectRegistry      - extensible catalog of falling food types
+     FallingObject        - base class every food type extends
+     SandwichSpawner       - decides what/when to spawn, scales with difficulty
+     BasketController      - the tray + Chef Henry, follows the player's finger
+     CollisionSystem        - AABB checks between tray and falling objects
+     GameManager             - orchestrates everything, owns game state
+   ========================================================================= */
+
+/* ============================== TUNABLE CONSTANTS ==============================
+   Adjust these to tune game feel without touching engine logic below.
+   ================================================================================= */
+const CONFIG = {
+  // --- Falling speed ---
+  BASE_FALL_SPEED: 5,          // px/sec at level 0 (was 20, slowed 75%)
+  FALL_SPEED_VARIANCE: 0.1,   // +/- random variance per object (0.1 = +/-10%)
+
+  // --- Difficulty leveling ---
+  POINTS_PER_LEVEL: 10,       // score needed to advance one difficulty level
+  // Speed doubles every N levels, forever — no cap. e.g. with POINTS_PER_LEVEL=10
+  // and DOUBLE_EVERY_N_LEVELS=10, speed doubles every 100 points, endlessly.
+  DOUBLE_EVERY_N_LEVELS: 10,
+
+  // --- Spawn timing ---
+  BASE_SPAWN_INTERVAL: 1.0,   // seconds between spawns at level 0
+  MIN_SPAWN_INTERVAL: 0.32,   // fastest spawn interval allowed
+  SPAWN_INTERVAL_DECAY: 0.94, // multiplied per level (lower = spawns speed up faster)
+
+  // --- Hearts ---
+  MAX_HEARTS: 3,
+};
+
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+let DPR = Math.min(window.devicePixelRatio || 1, 2);
+let W = 0, H = 0;
+let SCALE = 1; // responsive size multiplier, derived from screen width vs a phone baseline
+
+function resize(){
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = Math.floor(W * DPR);
+  canvas.height = Math.floor(H * DPR);
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  // Baseline 390px = standard iPhone width. Clamp so tiny/huge screens
+  // still feel proportional (small phones don't get oversized art,
+  // tablets don't get tiny art).
+  SCALE = Math.max(0.72, Math.min(1.35, W / 390));
+}
+window.addEventListener('resize', resize);
+resize();
+
+/* ============================== AUDIO MANAGER ============================== */
+class AudioManager{
+  constructor(){
+    this.ctxAudio = null;
+    this.unlocked = false;
+  }
+  ensure(){
+    if(!this.ctxAudio){
+      try{
+        this.ctxAudio = new (window.AudioContext || window.webkitAudioContext)();
+      }catch(e){ this.ctxAudio = null; }
+    }
+    if(this.ctxAudio && this.ctxAudio.state === 'suspended'){
+      this.ctxAudio.resume();
+    }
+  }
+  tone(freq, duration, type, vol, glideTo){
+    if(!this.ctxAudio) return;
+    const t0 = this.ctxAudio.currentTime;
+    const osc = this.ctxAudio.createOscillator();
+    const gain = this.ctxAudio.createGain();
+    osc.type = type || 'sine';
+    osc.frequency.setValueAtTime(freq, t0);
+    if(glideTo) osc.frequency.exponentialRampToValueAtTime(glideTo, t0 + duration);
+    gain.gain.setValueAtTime(0.0001, t0);
+    gain.gain.exponentialRampToValueAtTime(vol || 0.25, t0 + 0.012);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
+    osc.connect(gain).connect(this.ctxAudio.destination);
+    osc.start(t0);
+    osc.stop(t0 + duration + 0.02);
+  }
+  noiseBurst(duration, vol){
+    if(!this.ctxAudio) return;
+    const bufferSize = Math.floor(this.ctxAudio.sampleRate * duration);
+    const buffer = this.ctxAudio.createBuffer(1, bufferSize, this.ctxAudio.sampleRate);
+    const data = buffer.getChannelData(0);
+    for(let i=0;i<bufferSize;i++){ data[i] = (Math.random()*2-1) * (1 - i/bufferSize); }
+    const src = this.ctxAudio.createBufferSource();
+    src.buffer = buffer;
+    const gain = this.ctxAudio.createGain();
+    gain.gain.setValueAtTime(vol || 0.3, this.ctxAudio.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.0001, this.ctxAudio.currentTime + duration);
+    src.connect(gain).connect(this.ctxAudio.destination);
+    src.start();
+  }
+  playCatch(){ this.ensure(); this.tone(520, 0.09, 'triangle', 0.22, 880); this.tone(880, 0.08, 'sine', 0.12, 1200); }
+  playMiss(){ this.ensure(); this.tone(180, 0.18, 'sawtooth', 0.18, 60); this.noiseBurst(0.12, 0.12); }
+  playGameOver(){ this.ensure(); this.tone(300,0.2,'square',0.15,120); setTimeout(()=>this.tone(180,0.35,'square',0.15,60), 150); }
+  playButton(){ this.ensure(); this.tone(700,0.05,'square',0.12,900); }
+}
+
+/* ============================== ANIMATION MANAGER ============================== */
+class AnimationManager{
+  constructor(){
+    this.particles = [];   // coin bursts, pop shards
+    this.floaters = [];    // floating "+1" texts
+    this.shakeTime = 0;
+    this.shakeMag = 0;
+  }
+  spawnCoinBurst(x, y, count){
+    count = count || 7;
+    for(let i=0;i<count;i++){
+      const ang = (Math.PI*2*i/count) + Math.random()*0.5;
+      const speed = 2 + Math.random()*3;
+      this.particles.push({
+        x, y, vx: Math.cos(ang)*speed, vy: Math.sin(ang)*speed - 2,
+        life: 1, maxLife: 1, size: 6+Math.random()*4, type:'coin', rot: Math.random()*Math.PI
+      });
+    }
+  }
+  spawnSplat(x, y){
+    for(let i=0;i<6;i++){
+      const ang = Math.random()*Math.PI - Math.PI; // upward-ish spray
+      const speed = 1 + Math.random()*2.5;
+      this.particles.push({
+        x, y, vx: Math.cos(ang)*speed, vy: -Math.abs(Math.sin(ang)*speed)*0.6,
+        life: 1, maxLife: 1, size: 4+Math.random()*5, type:'splat', color: '#E8B84B'
+      });
+    }
+  }
+  spawnFloatText(x, y, text, color){
+    this.floaters.push({ x, y, text, color: color || '#FFD93C', life: 1, maxLife: 1 });
+  }
+  shake(mag, time){
+    this.shakeMag = Math.max(this.shakeMag, mag);
+    this.shakeTime = Math.max(this.shakeTime, time);
+  }
+  getShakeOffset(dt){
+    if(this.shakeTime > 0){
+      this.shakeTime -= dt;
+      const m = this.shakeMag * (this.shakeTime > 0 ? 1 : 0);
+      return { x: (Math.random()*2-1)*m, y: (Math.random()*2-1)*m };
+    }
+    return { x:0, y:0 };
+  }
+  update(dt){
+    for(let i=this.particles.length-1;i>=0;i--){
+      const p = this.particles[i];
+      p.x += p.vx; p.y += p.vy;
+      p.vy += 0.18; // gravity
+      p.life -= dt*1.4;
+      if(p.life<=0) this.particles.splice(i,1);
+    }
+    for(let i=this.floaters.length-1;i>=0;i--){
+      const f = this.floaters[i];
+      f.y -= 1.4;
+      f.life -= dt*1.1;
+      if(f.life<=0) this.floaters.splice(i,1);
+    }
+  }
+  draw(ctx){
+    // coins / splats
+    for(const p of this.particles){
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, p.life);
+      if(p.type === 'coin'){
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.rot + p.life*3);
+        const grad = ctx.createLinearGradient(-p.size,0,p.size,0);
+        grad.addColorStop(0, '#FFE68A');
+        grad.addColorStop(0.5, '#FFC93C');
+        grad.addColorStop(1, '#E8A317');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.ellipse(0,0,p.size, p.size*0.85, 0, 0, Math.PI*2);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+      } else {
+        ctx.fillStyle = p.color || '#C9A227';
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size*0.5, 0, Math.PI*2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+    // floating text
+    for(const f of this.floaters){
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, f.life);
+      ctx.fillStyle = f.color;
+      ctx.font = '900 30px Arial, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+      ctx.lineWidth = 4;
+      ctx.strokeText(f.text, f.x, f.y);
+      ctx.fillText(f.text, f.x, f.y);
+      ctx.restore();
+    }
+  }
+  reset(){ this.particles.length = 0; this.floaters.length = 0; this.shakeTime = 0; this.shakeMag = 0; }
+}
+
+/* ============================== HUD ============================== */
+class HUD{
+  constructor(){
+    this.heartsEl = document.getElementById('hearts');
+    this.scoreEl = document.getElementById('score');
+    this.bestEl = document.getElementById('bestScoreHud');
+    this.hudRoot = document.getElementById('hud');
+  }
+  show(){ this.hudRoot.classList.remove('hidden'); }
+  hide(){ this.hudRoot.classList.add('hidden'); }
+  setHearts(n, max){
+    max = max || 3;
+    let s = '';
+    for(let i=0;i<max;i++){ s += (i < n) ? '❤️' : '🖤'; }
+    this.heartsEl.textContent = s;
+  }
+  setScore(n){ this.scoreEl.textContent = n; }
+  setBest(n){ this.bestEl.textContent = n; }
+  pulseScore(){
+    this.scoreEl.style.transition = 'none';
+    this.scoreEl.style.transform = 'scale(1.35)';
+    requestAnimationFrame(()=>{
+      this.scoreEl.style.transition = 'transform 140ms ease-out';
+      this.scoreEl.style.transform = 'scale(1)';
+    });
+  }
+}
+
+/* ============================== EXTENSIBLE OBJECT SYSTEM ============================== */
+/*
+  Every falling food type is registered here with:
+    weight        - relative spawn probability (for future weighted pools)
+    scoreValue    - points awarded on catch (negative allowed for hazards)
+    heartDelta    - hearts lost on catch (0 for normal food)
+    radius        - collision radius
+    draw(ctx,obj) - how to render it
+    onCatch(game, obj) - optional custom catch behavior (golden bonus, freeze, bomb, etc.)
+  Adding a new type later (Golden Sandwich, Moldy Sandwich, Bomb, Freeze, Coin, ...)
+  is just a new entry here — no engine code needs to change.
+*/
+const ObjectRegistry = {
+  types: {},
+  register(name, def){ this.types[name] = def; },
+  get(name){ return this.types[name]; },
+  weightedPool(){
+    // returns array of [name, cumulativeWeight] for future multi-type spawning
+    const pool = [];
+    let total = 0;
+    for(const name in this.types){ total += this.types[name].weight; pool.push([name, total]); }
+    return { pool, total };
+  },
+  pickRandom(){
+    const { pool, total } = this.weightedPool();
+    const r = Math.random() * total;
+    for(const [name, cum] of pool){ if(r <= cum) return name; }
+    return pool.length ? pool[pool.length-1][0] : null;
+  }
+};
+
+// --- Regular Sandwich (the only type in v1) ---
+ObjectRegistry.register('regular', {
+  weight: 1,
+  scoreValue: 1,
+  heartDelta: 0,
+  radius: 34,
+  fallSpeedMult: 1,
+  color1: '#F4C766', color2: '#8B5A2B', color3: '#7FB84B',
+  draw(ctx, obj){
+    ctx.save();
+    ctx.translate(obj.x, obj.y);
+    ctx.rotate(obj.rot);
+    const r = obj.radius;
+    // shadow-ish base bun
+    ctx.fillStyle = '#E8A85C';
+    roundRect(ctx, -r, r*0.15, r*2, r*0.55, r*0.3);
+    ctx.fill();
+    // lettuce
+    ctx.fillStyle = '#7FB84B';
+    roundRect(ctx, -r*1.05, -r*0.05, r*2.1, r*0.32, r*0.16);
+    ctx.fill();
+    // patty
+    ctx.fillStyle = '#8B5A2B';
+    roundRect(ctx, -r*0.95, -r*0.32, r*1.9, r*0.32, r*0.14);
+    ctx.fill();
+    // cheese corner peek
+    ctx.fillStyle = '#FFD23F';
+    ctx.beginPath();
+    ctx.moveTo(-r*0.9, -r*0.18);
+    ctx.lineTo(-r*0.5, -r*0.4);
+    ctx.lineTo(-r*0.55, -r*0.05);
+    ctx.closePath();
+    ctx.fill();
+    // top bun
+    ctx.fillStyle = '#F4C766';
+    ctx.beginPath();
+    ctx.moveTo(-r, -r*0.35);
+    ctx.quadraticCurveTo(0, -r*1.15, r, -r*0.35);
+    ctx.closePath();
+    ctx.fill();
+    // sesame seeds
+    ctx.fillStyle = '#FFF3D6';
+    ctx.beginPath(); ctx.ellipse(-r*0.35,-r*0.7,2.6,1.6,0.3,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(r*0.1,-r*0.85,2.6,1.6,-0.2,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(r*0.45,-r*0.6,2.6,1.6,0.4,0,Math.PI*2); ctx.fill();
+    ctx.restore();
+  }
+});
+
+/* Base class every falling object instance uses (regardless of type). */
+class FallingObject{
+  constructor(typeName, x, baseSpeed){
+    const def = ObjectRegistry.get(typeName);
+    this.typeName = typeName;
+    this.def = def;
+    this.x = x;
+    this.y = -60;
+    this.radius = def.radius * SCALE;
+    this.rot = (Math.random()*0.5 - 0.25);
+    this.rotSpeed = (Math.random()*0.02 - 0.01);
+    const v = CONFIG.FALL_SPEED_VARIANCE;
+    this.speed = baseSpeed * (1 - v + Math.random()*v*2) * (def.fallSpeedMult || 1);
+    this.dead = false;
+  }
+  update(dt){
+    this.y += this.speed * dt;
+    this.rot += this.rotSpeed * dt;
+  }
+  draw(ctx){ this.def.draw(ctx, this); }
+  /** Called by GameManager when the tray catches this object. */
+  onCatch(game){
+    if(this.def.onCatch){ this.def.onCatch(game, this); return; }
+    game.addScore(this.def.scoreValue);
+    if(this.def.heartDelta) game.addHearts(this.def.heartDelta);
+    game.anim.spawnFloatText(this.x, this.y, (this.def.scoreValue>=0?'+':'') + this.def.scoreValue, '#FFD93C');
+    game.anim.spawnCoinBurst(this.x, this.y, 8);
+    game.audio.playCatch();
+    game.basket.bounce();
+  }
+  /** Called by GameManager when this object reaches the bottom without being caught. */
+  onMiss(game){
+    if(this.def.onMiss){ this.def.onMiss(game, this); return; }
+    game.loseHeart();
+    game.anim.spawnSplat(this.x, game.groundY);
+    game.audio.playMiss();
+    game.anim.shake(10, 0.25);
+  }
+}
+
+function roundRect(ctx, x, y, w, h, r){
+  ctx.beginPath();
+  ctx.moveTo(x+r, y);
+  ctx.arcTo(x+w, y, x+w, y+h, r);
+  ctx.arcTo(x+w, y+h, x, y+h, r);
+  ctx.arcTo(x, y+h, x, y, r);
+  ctx.arcTo(x, y, x+w, y, r);
+  ctx.closePath();
+}
+
+/* ============================== SANDWICH SPAWNER ============================== */
+class SandwichSpawner{
+  constructor(game){
+    this.game = game;
+    this.timer = 0;
+    this.baseInterval = CONFIG.BASE_SPAWN_INTERVAL;
+    this.minInterval = CONFIG.MIN_SPAWN_INTERVAL;
+    this.interval = this.baseInterval;
+    this.baseSpeed = CONFIG.BASE_FALL_SPEED;
+    this.currentSpeed = this.baseSpeed;
+  }
+  reset(){
+    this.timer = 0;
+    this.interval = this.baseInterval;
+    this.currentSpeed = this.baseSpeed;
+  }
+  /** Looks up the highest speed multiplier step unlocked at the given level. */
+  /** Speed doubles every CONFIG.DOUBLE_EVERY_N_LEVELS levels, with no ceiling. */
+  speedMultiplierForLevel(level){
+    return Math.pow(2, Math.floor(level / CONFIG.DOUBLE_EVERY_N_LEVELS));
+  }
+  applyDifficulty(level){
+    this.currentSpeed = this.baseSpeed * this.speedMultiplierForLevel(level);
+    this.interval = Math.max(this.minInterval, this.baseInterval * Math.pow(CONFIG.SPAWN_INTERVAL_DECAY, level));
+  }
+  update(dt){
+    this.timer -= dt;
+    if(this.timer <= 0){
+      this.spawn();
+      this.timer = this.interval * (0.85 + Math.random()*0.3);
+    }
+  }
+  spawn(){
+    const typeName = ObjectRegistry.pickRandom();
+    if(!typeName) return;
+    const margin = 50 * SCALE;
+    const x = margin + Math.random() * (W - margin*2);
+    const obj = new FallingObject(typeName, x, this.currentSpeed || this.baseSpeed);
+    this.game.objects.push(obj);
+  }
+}
+
+/* ============================== BASKET CONTROLLER (Chef Henry's Tray) ============================== */
+class BasketController{
+  constructor(game){
+    this.game = game;
+    this.width = 130;
+    this.height = 46;
+    this.x = 0; // center x
+    this.targetX = 0;
+    this.y = 0;
+    this.bounceT = 0;
+  }
+  reset(){
+    this.width = 130 * SCALE;
+    this.height = 46 * SCALE;
+    this.x = W/2;
+    this.targetX = W/2;
+    this.y = H - 120 * SCALE;
+    this.bounceT = 0;
+  }
+  onResize(){
+    this.width = 130 * SCALE;
+    this.height = 46 * SCALE;
+    this.y = H - 120 * SCALE;
+  }
+  setTarget(x){
+    const half = this.width/2;
+    this.targetX = Math.max(half, Math.min(W - half, x));
+  }
+  bounce(){ this.bounceT = 1; }
+  update(dt){
+    // smooth follow (lerp) for satisfying, non-twitchy motion
+    this.x += (this.targetX - this.x) * Math.min(1, dt*14);
+    if(this.bounceT > 0) this.bounceT = Math.max(0, this.bounceT - dt*5);
+  }
+  getBounds(){
+    return { left: this.x - this.width/2, right: this.x + this.width/2, top: this.y - this.height/2, bottom: this.y + this.height/2 };
+  }
+  draw(ctx){
+    const bounce = Math.sin(this.bounceT * Math.PI) * 10;
+    ctx.save();
+    ctx.translate(this.x, this.y - bounce);
+    ctx.scale(SCALE, SCALE);
+    const w = this.width / SCALE; // draw in unscaled local units; ctx.scale handles sizing
+
+    // Chef Henry body (simple, bold, cartoon)
+    ctx.fillStyle = '#F2D9B8'; // face/hands tone
+    ctx.beginPath();
+    ctx.ellipse(0, 34, 22, 20, 0, 0, Math.PI*2);
+    ctx.fill();
+
+    ctx.fillStyle = '#FFFFFF'; // chef coat
+    roundRect(ctx, -46, 10, 92, 34, 14);
+    ctx.fill();
+
+    ctx.fillStyle = '#FF4757'; // apron accent
+    roundRect(ctx, -18, 14, 36, 22, 8);
+    ctx.fill();
+
+    // chef hat peeking behind tray
+    ctx.fillStyle = '#FFFFFF';
+    roundRect(ctx, -20, -18, 40, 22, 10);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(0, -18, 22, 10, 0, Math.PI, Math.PI*2);
+    ctx.fill();
+
+    // the tray (this is the actual collision surface, drawn on top, in front)
+    ctx.fillStyle = '#B9C2CC';
+    roundRect(ctx, -w/2, -6, w, 14, 7);
+    ctx.fill();
+    ctx.fillStyle = '#E2E7EC';
+    roundRect(ctx, -w/2+4, -9, w-8, 6, 4);
+    ctx.fill();
+    ctx.strokeStyle = '#8A929C';
+    ctx.lineWidth = 2;
+    roundRect(ctx, -w/2, -6, w, 14, 7);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+}
+
+/* ============================== COLLISION SYSTEM ============================== */
+class CollisionSystem{
+  check(basketBounds, obj){
+    // circle (sandwich) vs rect (tray) — check only the top surface band for a satisfying catch feel
+    const closestX = Math.max(basketBounds.left, Math.min(obj.x, basketBounds.right));
+    const closestY = Math.max(basketBounds.top, Math.min(obj.y, basketBounds.bottom));
+    const dx = obj.x - closestX;
+    const dy = obj.y - closestY;
+    return (dx*dx + dy*dy) <= (obj.radius*0.75) * (obj.radius*0.75);
+  }
+}
+
+/* ============================== GAME MANAGER ============================== */
+const STATE = { START:'start', PLAYING:'playing', GAMEOVER:'gameover' };
+
+class GameManager{
+  constructor(){
+    this.audio = new AudioManager();
+    this.anim = new AnimationManager();
+    this.hud = new HUD();
+    this.spawner = new SandwichSpawner(this);
+    this.basket = new BasketController(this);
+    this.collision = new CollisionSystem();
+
+    this.state = STATE.START;
+    this.objects = [];
+    this.score = 0;
+    this.hearts = CONFIG.MAX_HEARTS;
+    this.maxHearts = CONFIG.MAX_HEARTS;
+    this.best = 0;
+    try{ this.best = parseInt(localStorage.getItem('cts_best') || '0', 10) || 0; }catch(e){ this.best = 0; }
+
+    this.groundY = 0;
+    this.lastTime = 0;
+
+    this.els = {
+      startScreen: document.getElementById('startScreen'),
+      gameOverScreen: document.getElementById('gameOverScreen'),
+      bestScoreStart: document.getElementById('bestScoreStart'),
+      bestScoreEnd: document.getElementById('bestScoreEnd'),
+      finalScore: document.getElementById('finalScore'),
+      flash: document.getElementById('flash'),
+    };
+
+    this.bindInput();
+    this.bindButtons();
+    this.onResize();
+    window.addEventListener('resize', ()=>this.onResize());
+
+    this.els.bestScoreStart.textContent = this.best;
+    this.hud.setBest(this.best);
+
+    requestAnimationFrame((t)=>this.loop(t));
+  }
+
+  onResize(){
+    this.groundY = H - 40;
+    this.basket.onResize();
+  }
+
+  bindInput(){
+    const getPoint = (e)=>{
+      if(e.touches && e.touches.length) return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      return { x: e.clientX, y: e.clientY };
+    };
+    const start = (e)=>{
+      if(this.state !== STATE.PLAYING) return;
+      const p = getPoint(e);
+      // Only begin dragging if the touch starts in the lower half of the screen,
+      // per spec: "Touch anywhere on the lower half of the screen."
+      if(p.y < H * 0.5) return;
+      e.preventDefault();
+      this._dragging = true;
+      this.basket.setTarget(p.x);
+    };
+    const move = (e)=>{
+      if(this.state !== STATE.PLAYING || !this._dragging) return;
+      e.preventDefault();
+      this.basket.setTarget(getPoint(e).x);
+    };
+    const end = ()=>{ this._dragging = false; };
+
+    canvas.addEventListener('touchstart', start, { passive:false });
+    canvas.addEventListener('touchmove', move, { passive:false });
+    canvas.addEventListener('touchend', end);
+    canvas.addEventListener('touchcancel', end);
+    canvas.addEventListener('mousedown', start);
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', end);
+  }
+
+  bindButtons(){
+    document.getElementById('playBtn').addEventListener('click', ()=>{ this.audio.ensure(); this.audio.playButton(); this.startGame(); });
+    document.getElementById('playAgainBtn').addEventListener('click', ()=>{ this.audio.playButton(); this.startGame(); });
+    document.getElementById('homeBtn').addEventListener('click', ()=>{ this.audio.playButton(); this.goHome(); });
+  }
+
+  showScreen(name){
+    this.els.startScreen.classList.toggle('hidden', name!=='start');
+    this.els.gameOverScreen.classList.toggle('hidden', name!=='gameover');
+    if(name === 'playing'){ this.hud.show(); } else { this.hud.hide(); }
+  }
+
+  startGame(){
+    this.state = STATE.PLAYING;
+    this.score = 0;
+    this.hearts = this.maxHearts;
+    this.objects.length = 0;
+    this.anim.reset();
+    this.spawner.reset();
+    this.basket.reset();
+    this.hud.setScore(0);
+    this.hud.setHearts(this.hearts, this.maxHearts);
+    this.hud.setBest(this.best);
+    this.showScreen('playing');
+  }
+
+  goHome(){
+    this.state = STATE.START;
+    this.els.bestScoreStart.textContent = this.best;
+    this.showScreen('start');
+  }
+
+  addScore(n){
+    this.score += n;
+    this.hud.setScore(this.score);
+    this.hud.pulseScore();
+  }
+
+  addHearts(n){
+    this.hearts = Math.min(this.maxHearts, this.hearts + n);
+    this.hud.setHearts(this.hearts, this.maxHearts);
+  }
+
+  loseHeart(){
+    this.hearts -= 1;
+    this.hud.setHearts(Math.max(0,this.hearts), this.maxHearts);
+    if(this.hearts <= 0){
+      this.endGame();
+    }
+  }
+
+  endGame(){
+    this.state = STATE.GAMEOVER;
+    this.audio.playGameOver();
+    if(this.score > this.best){
+      this.best = this.score;
+      try{ localStorage.setItem('cts_best', String(this.best)); }catch(e){}
+    }
+    this.els.finalScore.textContent = this.score;
+    this.els.bestScoreEnd.textContent = this.best;
+    this.hud.setBest(this.best);
+    setTimeout(()=>this.showScreen('gameover'), 260);
+  }
+
+  currentDifficultyLevel(){
+    return Math.floor(this.score / CONFIG.POINTS_PER_LEVEL);
+  }
+
+  update(dt){
+    if(this.state !== STATE.PLAYING) return;
+
+    this.spawner.applyDifficulty(this.currentDifficultyLevel());
+    this.spawner.update(dt);
+    this.basket.update(dt);
+
+    const bounds = this.basket.getBounds();
+    for(let i=this.objects.length-1;i>=0;i--){
+      const obj = this.objects[i];
+      obj.update(dt*60);
+
+      if(!obj.dead && this.collision.check(bounds, obj)){
+        obj.dead = true;
+        obj.onCatch(this);
+        this.objects.splice(i,1);
+        continue;
+      }
+      if(obj.y - obj.radius > this.groundY + 20){
+        obj.dead = true;
+        obj.onMiss(this);
+        this.objects.splice(i,1);
+      }
+    }
+
+    this.anim.update(dt);
+  }
+
+  draw(){
+    ctx.clearRect(0,0,W,H);
+
+    const shake = this.anim.getShakeOffset(1/60);
+    ctx.save();
+    ctx.translate(shake.x, shake.y);
+
+    // subtle ground line
+    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, this.groundY+30);
+    ctx.lineTo(W, this.groundY+30);
+    ctx.stroke();
+
+    for(const obj of this.objects){ obj.draw(ctx); }
+    this.basket.draw(ctx);
+    this.anim.draw(ctx);
+
+    ctx.restore();
+  }
+
+  loop(t){
+    const dt = this.lastTime ? Math.min(0.033, (t - this.lastTime)/1000) : 0;
+    this.lastTime = t;
+    this.update(dt);
+    this.draw();
+    requestAnimationFrame((tt)=>this.loop(tt));
+  }
+}
+
+/* ============================== BOOT ============================== */
+const game = new GameManager();
+game.showScreen('start');
+
+})();
+</script>
+</body>
+</html>
